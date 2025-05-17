@@ -1,7 +1,7 @@
 ﻿# Aftermath
 
 [![NuGet](https://img.shields.io/nuget/v/Aftermath.svg)](https://www.nuget.org/packages/Aftermath/)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/ShadyNagy/Aftermath/build.yml)](https://github.com/ShadyNagy/Aftermath/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/ShadyNagy/Aftermath/actions/workflows/buid.yml)](https://github.com/ShadyNagy/Aftermath/actions)
 [![License](https://img.shields.io/github/license/ShadyNagy/Aftermath)](https://github.com/ShadyNagy/Aftermath/blob/main/LICENSE)
 
 Aftermath is a powerful .NET library that allows you to declare post-execution hooks for methods without modifying the original method implementation. It implements aspect-oriented programming (AOP) principles to handle cross-cutting concerns in a clean, maintainable way.
