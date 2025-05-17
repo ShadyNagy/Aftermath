@@ -1,5 +1,6 @@
 ﻿using Aftermath.Hooks;
 using Microsoft.Extensions.DependencyInjection;
+using System.Reflection;
 
 namespace Aftermath.Extensions;
 
@@ -208,5 +209,179 @@ public static class ServiceCollectionExtensions
 		});
 
 		return services;
+	}
+
+	/// <summary>
+	/// Scans the specified assemblies for types that implement IHookable and registers them with the appropriate proxy.
+	/// </summary>
+	/// <param name="services">The service collection to add services to.</param>
+	/// <param name="assemblies">The assemblies to scan for hookable types.</param>
+	/// <param name="lifetime">The service lifetime to use for registration.</param>
+	/// <returns>The service collection so that additional calls can be chained.</returns>
+	public static IServiceCollection AddHookableFromAssemblies(
+			this IServiceCollection services,
+			IEnumerable<Assembly> assemblies,
+			ServiceLifetime lifetime = ServiceLifetime.Scoped)
+	{
+		if (services == null)
+			throw new ArgumentNullException(nameof(services));
+
+		if (assemblies == null)
+			throw new ArgumentNullException(nameof(assemblies));
+
+		foreach (var assembly in assemblies)
+		{
+			var hookableTypes = assembly.GetExportedTypes()
+					.Where(t => t.IsClass && !t.IsAbstract && typeof(IHookable).IsAssignableFrom(t))
+					.ToList();
+
+			var hookableInterfaces = assembly.GetExportedTypes()
+					.Where(t => t.IsInterface && t != typeof(IHookable) && typeof(IHookable).IsAssignableFrom(t))
+					.ToList();
+
+			foreach (var hookableType in hookableTypes)
+			{
+				var interfaces = hookableType.GetInterfaces()
+						.Where(i => typeof(IHookable).IsAssignableFrom(i) && i != typeof(IHookable))
+						.ToList();
+
+				if (interfaces.Count > 0)
+				{
+					foreach (var interfaceType in interfaces)
+					{
+						RegisterHookableServiceWithInterface(services, hookableType, interfaceType, lifetime);
+					}
+				}
+				else
+				{
+					RegisterHookableServiceWithImpl(services, hookableType, lifetime);
+				}
+			}
+
+			foreach (var hookableInterface in hookableInterfaces)
+			{
+				// Find all types that implement this interface
+				var implementingTypes = assembly.GetExportedTypes()
+						.Where(t => t.IsClass && !t.IsAbstract && hookableInterface.IsAssignableFrom(t))
+						.ToList();
+
+				// If there's exactly one implementation, register it
+				if (implementingTypes.Count == 1)
+				{
+					RegisterHookableServiceWithInterface(services, implementingTypes[0], hookableInterface, lifetime);
+				}
+			}
+		}
+
+		return services;
+	}
+
+	/// <summary>
+	/// Registers all services that implement IHookable from the calling assembly.
+	/// </summary>
+	/// <param name="services">The service collection to add services to.</param>
+	/// <param name="lifetime">The service lifetime to use for registration.</param>
+	/// <returns>The service collection so that additional calls can be chained.</returns>
+	public static IServiceCollection AddHookable(
+			this IServiceCollection services,
+			ServiceLifetime lifetime = ServiceLifetime.Scoped)
+	{
+		return AddHookableFromAssemblies(services, new[] { Assembly.GetCallingAssembly() }, lifetime);
+	}
+
+	/// <summary>
+	/// Registers a service that implements IHookable with the appropriate proxy.
+	/// </summary>
+	/// <typeparam name="TService">The service type to register.</typeparam>
+	/// <param name="services">The service collection to add services to.</param>
+	/// <param name="lifetime">The service lifetime to use for registration.</param>
+	/// <returns>The service collection so that additional calls can be chained.</returns>
+	public static IServiceCollection AddHookable<TService>(
+			this IServiceCollection services,
+			ServiceLifetime lifetime = ServiceLifetime.Scoped)
+			where TService : class, IHookable
+	{
+		if (services == null)
+			throw new ArgumentNullException(nameof(services));
+
+		var serviceType = typeof(TService);
+
+		if (serviceType.IsInterface)
+		{
+			var implementingTypes = AppDomain.CurrentDomain.GetAssemblies()
+					.SelectMany(a => {
+						try { return a.GetExportedTypes(); }
+						catch { return Type.EmptyTypes; }
+					})
+					.Where(t => t.IsClass && !t.IsAbstract && serviceType.IsAssignableFrom(t))
+					.ToList();
+
+			if (implementingTypes.Count == 1)
+			{
+				RegisterHookableServiceWithInterface(services, implementingTypes[0], serviceType, lifetime);
+			}
+			else if (implementingTypes.Count == 0)
+			{
+				throw new InvalidOperationException($"No implementation found for interface {serviceType.FullName}");
+			}
+			else
+			{
+				throw new InvalidOperationException($"Multiple implementations found for interface {serviceType.FullName}");
+			}
+		}
+		else
+		{
+			RegisterHookableServiceWithImpl(services, serviceType, lifetime);
+		}
+
+		return services;
+	}
+
+	private static void RegisterHookableServiceWithInterface(
+			IServiceCollection services,
+			Type implementationType,
+			Type interfaceType,
+			ServiceLifetime lifetime)
+	{
+		if (services.Any(sd => sd.ServiceType == interfaceType))
+			return;
+
+		var implServiceDescriptor = new ServiceDescriptor(
+				implementationType,
+				implementationType,
+				lifetime);
+		services.Add(implServiceDescriptor);
+
+		var interfaceServiceDescriptor = new ServiceDescriptor(
+				interfaceType,
+				provider =>
+				{
+					var implementation = provider.GetRequiredService(implementationType);
+					var proxyGenerator = provider.GetRequiredService<ProxyGenerator>();
+					var proxiedService = proxyGenerator.CreateProxy(interfaceType, implementation);
+					return proxiedService;
+				},
+				lifetime);
+		services.Add(interfaceServiceDescriptor);
+	}
+
+	private static void RegisterHookableServiceWithImpl(
+			IServiceCollection services,
+			Type implementationType,
+			ServiceLifetime lifetime)
+	{
+		if (services.Any(sd => sd.ServiceType == implementationType))
+			return;
+
+		var serviceDescriptor = new ServiceDescriptor(
+				implementationType,
+				provider =>
+				{
+					var proxyGenerator = provider.GetRequiredService<ProxyGenerator>();
+					var proxiedService = proxyGenerator.CreateClassProxy(implementationType);
+					return proxiedService;
+				},
+				lifetime);
+		services.Add(serviceDescriptor);
 	}
 }

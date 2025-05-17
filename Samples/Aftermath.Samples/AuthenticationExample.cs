@@ -12,6 +12,8 @@ public class AuthenticationExample
 
 		services.AddAftermath();
 
+		services.AddHookable();
+
 		services.AddScoped<IUserManager, UserManager>();
 		services.AddSingleton<IAuthenticationLogger, AuthenticationLogger>();
 		services.AddSingleton<SecurityAuditService>();
@@ -37,7 +39,7 @@ public class AuthenticationExample
 		}
 	}
 
-	public interface IUserService
+	public interface IUserService : IHookable
 	{
 		[CallAfter(typeof(IAuthenticationLogger), nameof(IAuthenticationLogger.LogAuthenticationAttemptAsync))]
 		[CallAfter(typeof(SecurityAuditService), nameof(SecurityAuditService.RecordAuthenticationAttempt))]
@@ -78,12 +80,7 @@ public class AuthenticationExample
 			_userManager = userManager;
 		}
 
-		[CallAfter(typeof(IAuthenticationLogger), nameof(IAuthenticationLogger.LogAuthenticationAttemptAsync))]
-		[CallAfter(typeof(SecurityAuditService), nameof(SecurityAuditService.RecordAuthenticationAttempt))]
-		[CallAfter(typeof(BruteForceDetector), nameof(BruteForceDetector.CheckForBruteForceAttack))]
-		[MapParameter("username", "username")]
-		[MapReturnValue("success")]
-		public async Task<bool> AuthenticateAsync(string username, string password)
+		public virtual async Task<bool> AuthenticateAsync(string username, string password)
 		{
 			var user = await _userManager.GetUserByUsernameAsync(username);
 
@@ -95,7 +92,7 @@ public class AuthenticationExample
 			return isValid;
 		}
 
-		public async Task<User> GetUserByIdAsync(int userId)
+		public virtual async Task<User> GetUserByIdAsync(int userId)
 		{
 			return new User { Id = userId };
 		}

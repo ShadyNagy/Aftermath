@@ -92,4 +92,29 @@ public class ProxyGenerator
 		var interceptor = new HookInterceptor(_hookManager);
 		return _proxyGenerator.CreateClassProxyWithTarget<T>(target, interceptor);
 	}
+
+	/// <summary>
+	/// Creates a proxy for the specified interface type and target instance.
+	/// </summary>
+	/// <param name="interfaceType">The interface type that the proxy will implement.</param>
+	/// <param name="target">The target object to proxy.</param>
+	/// <returns>A proxy that implements the interface and executes hooks after method calls.</returns>
+	public object CreateProxy(Type interfaceType, object target)
+	{
+		if (interfaceType == null)
+			throw new ArgumentNullException(nameof(interfaceType));
+
+		if (target == null)
+			throw new ArgumentNullException(nameof(target));
+
+		if (!interfaceType.IsInterface)
+			throw new ArgumentException("Type must be an interface", nameof(interfaceType));
+
+		if (!interfaceType.IsAssignableFrom(target.GetType()))
+			throw new ArgumentException($"Target does not implement interface {interfaceType.FullName}", nameof(target));
+
+		var interceptor = new HookInterceptor(_hookManager);
+
+		return _proxyGenerator.CreateInterfaceProxyWithTarget(interfaceType, target, interceptor);
+	}
 }
